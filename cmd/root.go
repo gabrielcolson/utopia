@@ -95,7 +95,6 @@ var rootCmd = &cobra.Command{
 		}
 
 		for _, file := range files {
-			fmt.Println(file.Name())
 			currentFile, err := fs.Open(file.Name())
 			if err != nil {
 				return err
@@ -111,6 +110,8 @@ var rootCmd = &cobra.Command{
 				return err
 			}
 		}
+
+		fmt.Println("Your new project is setup in the", projectDirName, "directory")
 
 		return nil
 	},
