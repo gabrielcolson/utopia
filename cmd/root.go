@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
+	"gopkg.in/src-d/go-billy.v4"
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -13,6 +14,51 @@ import (
 	"os"
 	"path"
 )
+
+const configFileName string = "utopia.yml"
+
+var rootCmd = &cobra.Command{
+	Use:   "utopia",
+	Short: "Utopia is a simple, git based and language agnostic template generator",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectDirName := args[0]
+		url := args[1]
+
+		u := Utopia{
+			fs: memfs.New(),
+		}
+
+		err := u.cloneTemplate(url)
+		if err != nil {
+			return err
+		}
+
+		config, err := u.loadConfig()
+		if err != nil {
+			return err
+		}
+
+		selectedFeatures, err := askFeatures(config)
+		if err != nil {
+			return err
+		}
+
+		err = u.pullFeatures(selectedFeatures)
+		if err != nil {
+			return err
+		}
+
+		err = u.writeProjectToDisk(projectDirName)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Your project was successfully created in \"%s\"\n", projectDirName)
+
+		return nil
+	},
+}
 
 type Feature struct {
 	Name        string `yaml:"name"`
@@ -24,97 +70,116 @@ type Config struct {
 	Features []Feature `yaml:"features"`
 }
 
-var rootCmd = &cobra.Command{
-	Use:   "utopia",
-	Short: "Utopia is a simple, git based and language agnostic template generator",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fs := memfs.New()
-		storage := memory.NewStorage()
+type Utopia struct {
+	fs   billy.Filesystem
+	repo *git.Repository
+}
 
-		url := args[0]
-		r, err := git.Clone(storage, fs, &git.CloneOptions{
-			URL: url,
+func (u *Utopia) cloneTemplate(url string) error {
+	storage := memory.NewStorage()
+
+	r, err := git.Clone(storage, u.fs, &git.CloneOptions{
+		URL: url,
+	})
+	if err != nil {
+		return err
+	}
+
+	u.repo = r
+	return nil
+}
+
+func (u *Utopia) loadConfig() (*Config, error) {
+	configFile, err := u.fs.Open(configFileName)
+	if err != nil {
+		return nil, err
+	}
+
+	configDecoder := yaml.NewDecoder(configFile)
+	config := new(Config)
+	if err = configDecoder.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
+func askFeatures(config *Config) ([]Feature, error) {
+	var featOptions []string
+	for _, feat := range config.Features {
+		featOptions = append(featOptions, fmt.Sprintf("%s: %s", feat.Name, feat.Description))
+	}
+
+	prompt := &survey.MultiSelect{
+		Message: "Which feature do you need?",
+		Options: featOptions,
+		VimMode: true,
+	}
+
+	var selectedFeatIndices []int
+	if err := survey.AskOne(prompt, &selectedFeatIndices); err != nil {
+		return nil, err
+	}
+
+	selectedFeatures := make([]Feature, len(selectedFeatIndices))
+	for i, index := range selectedFeatIndices {
+		selectedFeatures[i] = config.Features[index]
+	}
+
+	return selectedFeatures, nil
+}
+
+func (u *Utopia) pullFeatures(features []Feature) error {
+	w, err := u.repo.Worktree()
+	if err != nil {
+		return err
+	}
+
+	for _, feat := range features {
+		err := w.Pull(&git.PullOptions{
+			RemoteName:    "origin",
+			ReferenceName: plumbing.NewBranchReferenceName(feat.Branch),
 		})
 		if err != nil {
 			return err
 		}
+	}
 
-		configFile, err := fs.Open("utopia.yml")
+	return nil
+}
+
+func (u *Utopia) writeProjectToDisk(projectDirName string) error {
+	if err := os.Mkdir(projectDirName, 0777); err != nil {
+		return err
+	}
+
+	files, err := u.fs.ReadDir("/")
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		if file.Name() == configFileName {
+			continue
+		}
+
+		currentFile, err := u.fs.Open(file.Name())
 		if err != nil {
 			return err
 		}
 
-		configDecoder := yaml.NewDecoder(configFile)
-		var config Config
-		if err = configDecoder.Decode(&config); err != nil {
-			return err
-		}
-
-		var featOptions []string
-		for _, feat := range config.Features {
-			featOptions = append(featOptions, fmt.Sprintf("%s: %s", feat.Name, feat.Description))
-		}
-
-		prompt := &survey.MultiSelect{
-			Message: "Which feature do you need?",
-			Options: featOptions,
-			VimMode: true,
-		}
-
-		var selectedFeatIndices []int
-		if err := survey.AskOne(prompt, &selectedFeatIndices); err != nil {
-			return err
-		}
-
-		w, err := r.Worktree()
+		p := path.Join(projectDirName, file.Name())
+		f, err := os.Create(p)
 		if err != nil {
 			return err
 		}
 
-		for _, featIndex := range selectedFeatIndices {
-			branchName := config.Features[featIndex].Branch
-			err := w.Pull(&git.PullOptions{
-				RemoteName:    "origin",
-				ReferenceName: plumbing.NewBranchReferenceName(branchName),
-			})
-			if err != nil {
-				return err
-			}
-		}
-
-		projectDirName := "project"
-
-		if err := os.Mkdir(projectDirName, 0777); err != nil {
+		if _, err := io.Copy(f, currentFile); err != nil {
 			return err
 		}
+	}
 
-		files, err := fs.ReadDir("/")
-		if err != nil {
-			return err
-		}
-
-		for _, file := range files {
-			currentFile, err := fs.Open(file.Name())
-			if err != nil {
-				return err
-			}
-
-			p := path.Join(projectDirName, file.Name())
-			f, err := os.Create(p)
-			if err != nil {
-				return err
-			}
-
-			if _, err := io.Copy(f, currentFile); err != nil {
-				return err
-			}
-		}
-
-		fmt.Println("Your new project is setup in the", projectDirName, "directory")
-
-		return nil
-	},
+	return nil
 }
 
 func Execute() {
