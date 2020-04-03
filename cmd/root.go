@@ -15,7 +15,7 @@ import (
 	"path"
 )
 
-const configFileName string = "utopia.yml"
+const configFileName string = ".utopia.yml"
 
 var rootCmd = &cobra.Command{
 	Use:   "utopia",

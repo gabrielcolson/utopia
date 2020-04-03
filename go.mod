@@ -1,4 +1,4 @@
-module utopia
+module github.com/gabrielcolson/utopia
 
 go 1.14
 

@@ -1,6 +1,6 @@
 package main
 
-import "utopia/cmd"
+import "github.com/gabrielcolson/utopia/cmd"
 
 func main() {
 	cmd.Execute()
