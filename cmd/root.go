@@ -184,8 +184,6 @@ func (u *Utopia) pullFeatures(features []Feature) error {
 }
 
 func (u *Utopia) writeProjectToDisk(sourceDirPath string, targetDirPath string) error {
-	fmt.Println("source:", sourceDirPath)
-	fmt.Println("target:", targetDirPath)
 	if err := os.Mkdir(targetDirPath, 0777); err != nil {
 		return err
 	}
