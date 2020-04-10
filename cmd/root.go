@@ -8,9 +8,14 @@ import (
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 	"gopkg.in/yaml.v2"
+	"net/url"
+
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
 )
@@ -78,8 +83,24 @@ type Utopia struct {
 func (u *Utopia) cloneTemplate(url string) error {
 	storage := memory.NewStorage()
 
+	var publicKey transport.AuthMethod
+	if isHttpUrl(url) {
+		publicKey = nil
+	} else { // is ssh url
+		sshPath := os.Getenv("HOME") + "/.ssh/id_rsa"
+		sshKey, err := ioutil.ReadFile(sshPath)
+		if err != nil {
+			return err
+		}
+		publicKey, err = ssh.NewPublicKeys("git", sshKey, "")
+		if err != nil {
+			return err
+		}
+	}
+
 	r, err := git.Clone(storage, u.fs, &git.CloneOptions{
-		URL: url,
+		URL:  url,
+		Auth: publicKey,
 	})
 	if err != nil {
 		return err
@@ -87,6 +108,20 @@ func (u *Utopia) cloneTemplate(url string) error {
 
 	u.repo = r
 	return nil
+}
+
+func isHttpUrl(toTest string) bool {
+	_, err := url.ParseRequestURI(toTest)
+	if err != nil {
+		return false
+	}
+
+	u, err := url.Parse(toTest)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+
+	return true
 }
 
 func (u *Utopia) loadConfig() (*Config, error) {
