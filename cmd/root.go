@@ -54,7 +54,7 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 
-		err = u.writeProjectToDisk(projectDirName)
+		err = u.writeProjectToDisk("/", projectDirName)
 		if err != nil {
 			return err
 		}
@@ -183,12 +183,14 @@ func (u *Utopia) pullFeatures(features []Feature) error {
 	return nil
 }
 
-func (u *Utopia) writeProjectToDisk(projectDirName string) error {
-	if err := os.Mkdir(projectDirName, 0777); err != nil {
+func (u *Utopia) writeProjectToDisk(sourceDirPath string, targetDirPath string) error {
+	fmt.Println("source:", sourceDirPath)
+	fmt.Println("target:", targetDirPath)
+	if err := os.Mkdir(targetDirPath, 0777); err != nil {
 		return err
 	}
 
-	files, err := u.fs.ReadDir("/")
+	files, err := u.fs.ReadDir(sourceDirPath)
 	if err != nil {
 		return err
 	}
@@ -198,20 +200,29 @@ func (u *Utopia) writeProjectToDisk(projectDirName string) error {
 			continue
 		}
 
-		currentFile, err := u.fs.Open(file.Name())
-		if err != nil {
-			return err
+		sourceFilePath := path.Join(sourceDirPath, file.Name())
+		targetFilePath := path.Join(targetDirPath, file.Name())
+
+		if file.IsDir() {
+			if err = u.writeProjectToDisk(sourceFilePath, targetFilePath); err != nil {
+				return err
+			}
+		} else {
+			currentFile, err := u.fs.Open(sourceFilePath)
+			if err != nil {
+				return err
+			}
+
+			f, err := os.Create(targetFilePath)
+			if err != nil {
+				return err
+			}
+
+			if _, err := io.Copy(f, currentFile); err != nil {
+				return err
+			}
 		}
 
-		p := path.Join(projectDirName, file.Name())
-		f, err := os.Create(p)
-		if err != nil {
-			return err
-		}
-
-		if _, err := io.Copy(f, currentFile); err != nil {
-			return err
-		}
 	}
 
 	return nil
