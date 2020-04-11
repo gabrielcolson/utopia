@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"regexp"
 )
 
 type Generator struct {
@@ -32,33 +31,61 @@ type Options struct {
 	Verbose        bool
 }
 
-func New(opts Options) *Generator {
-	if opts.DestDir == "" {
-		opts.DestDir = "project"
-	}
-	if opts.ConfigFileName == "" {
-		opts.ConfigFileName = ".utopia.yml"
+func New(opts Options) (*Generator, error) {
+	var u *url.URL
+	g := &Generator{
+		opts: opts,
 	}
 
-	return &Generator{
-		opts: opts,
+	if u = parseHttpUrl(g.opts.URL); u != nil {
+		g.log("Detected HTTP url")
+
+		g.auth = nil
+	} else if u = parseSshUrl(g.opts.URL); u != nil {
+		g.log("Detected SSH url")
+
+		auth, err := sshAuth()
+		g.auth = auth
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("invalid URL: %s", g.opts.URL)
+	}
+
+	if g.opts.DestDir == "" {
+		g.opts.DestDir = urlBaseName(u)
+	}
+	if g.opts.ConfigFileName == "" {
+		g.opts.ConfigFileName = ".utopia.yml"
+	}
+
+	return g, nil
+}
+
+func (g *Generator) log(v ...interface{}) {
+	if g.opts.Verbose {
+		log.Println(v...)
 	}
 }
 
-func (g *Generator) Generate() error {
-	if err := g.setupAuthMethod(); err != nil {
-		return err
+func sshAuth() (transport.AuthMethod, error) {
+	sshPath := os.Getenv("HOME") + "/.ssh/id_rsa"
+	sshKey, err := ioutil.ReadFile(sshPath)
+	if err != nil {
+		return nil, err
 	}
+	return ssh.NewPublicKeys("git", sshKey, "")
+}
 
+func (g *Generator) Generate() error {
 	fs := memfs.New()
 
 	r, err := g.clone(fs)
 	if err != nil {
 		return err
 	}
-	if g.opts.Verbose {
-		log.Println("Clone successful!")
-	}
+	g.log("Clone successful!")
 
 	config, err := g.loadConfig(fs)
 	if err != nil {
@@ -83,32 +110,6 @@ func (g *Generator) Generate() error {
 	return nil
 }
 
-func (g *Generator) setupAuthMethod() error {
-	if isHttpUrl(g.opts.URL) {
-		if g.opts.Verbose {
-			log.Println("Detected HTTP url")
-		}
-		g.auth = nil
-	} else if isSshUrl(g.opts.URL) {
-		if g.opts.Verbose {
-			log.Println("Detected SSH url")
-		}
-
-		sshPath := os.Getenv("HOME") + "/.ssh/id_rsa"
-		sshKey, err := ioutil.ReadFile(sshPath)
-		if err != nil {
-			return err
-		}
-		g.auth, err = ssh.NewPublicKeys("git", sshKey, "")
-		if err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("invalid URL: %s", g.opts.URL)
-	}
-	return nil
-}
-
 func (g *Generator) clone(fs billy.Filesystem) (*git.Repository, error) {
 	storage := memory.NewStorage()
 
@@ -122,17 +123,6 @@ func (g *Generator) clone(fs billy.Filesystem) (*git.Repository, error) {
 		Auth:     g.auth,
 		Progress: progressOutput,
 	})
-}
-
-func isSshUrl(rawUrl string) bool {
-	var sshPattern = regexp.MustCompile("^(?:([^@]+)@)?([^:]+):/?(.+)$")
-	matched := sshPattern.FindStringSubmatch(rawUrl)
-	return matched != nil
-}
-
-func isHttpUrl(u string) bool {
-	_, err := url.Parse(u)
-	return err == nil
 }
 
 func (g *Generator) loadConfig(fs billy.Filesystem) (*cfg.Config, error) {

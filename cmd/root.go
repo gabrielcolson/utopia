@@ -22,11 +22,14 @@ var rootCmd = &cobra.Command{
 	Short: "Utopia is a simple, git based and language agnostic template generator",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		g := generator.New(generator.Options{
+		g, err := generator.New(generator.Options{
 			URL:     args[0],
 			DestDir: DestDir,
 			Verbose: Verbose,
 		})
+		if err != nil {
+			return err
+		}
 
 		return g.Generate()
 	},
