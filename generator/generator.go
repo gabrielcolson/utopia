@@ -170,7 +170,7 @@ func (g *Generator) pullSelectedFeatures(r *git.Repository, c *cfg.Config, selec
 		err := w.Pull(&git.PullOptions{
 			RemoteName:    "origin",
 			ReferenceName: plumbing.NewBranchReferenceName(branchName),
-			Auth:          g.auth
+			Auth:          g.auth,
 		})
 		if err != nil {
 			return err
