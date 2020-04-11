@@ -1,6 +1,6 @@
 # Utopia
 
-Simple, git based and language agnostic template generator
+Simple, git based and language agnostic boilerplate generator
 
 ![Demo](.github/demo.gif)
 
@@ -10,9 +10,9 @@ go get -u github.com/gabrielcolson/utopia
 ```
 
 ## Usage
-You can create a new project from an utopia github repository:
+You can create a new project from a utopia github repository:
 ```shell script
-utopia mySuperProject https://github.com/gabrielcolson/utopia-example.git 
+utopia https://github.com/gabrielcolson/utopia-example.git 
 ```
 
 
@@ -20,14 +20,11 @@ To create a template, just add a `.utopia.yml` file at the root
 of your repository:
 ```yaml
 features:
-  - name: eslint
-    description: lint your project with eslint
+  eslint:
     branch: utopia/eslint
-  - name: prettier
-    description: format your project with prettier
+  prettier:
     branch: utopia/prettier
-  - name: auth
-    description: basic cookie based authentication
+  auth:
     branch: utopia/auth
 ```
 
